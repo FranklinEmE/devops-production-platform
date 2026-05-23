@@ -1,0 +1,45 @@
+mkdir -p .github/workflows && cat > .github/workflows/deploy.yml << 'EOF'
+name: Deploy to AKS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  ACR_NAME: devopsacr1234567
+  IMAGE_NAME: backend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: |
+          az acr login --name $ACR_NAME
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} ./apps/backend
+
+      - name: Push image to ACR
+        run: |
+          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+
+      - name: Set AKS context
+        run: |
+          az aks get-credentials --resource-group devops-rg --name devops-aks
+
+      - name: Deploy to AKS
+        run: |
+          kubectl set image deployment/backend backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+EOF
