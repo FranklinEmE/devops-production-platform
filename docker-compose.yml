@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./apps/backend
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build: ./apps/frontend
+    ports:
+      - "3000:3000"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
