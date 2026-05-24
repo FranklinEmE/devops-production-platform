@@ -35,4 +35,4 @@ jobs:
         run: az aks get-credentials --resource-group devops-rg --name devops-aks
 
       - name: Deploy to AKS
-        run: kubectl set image deployment/backend backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+        run: kubectl set image deployment/backend-deployment backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
