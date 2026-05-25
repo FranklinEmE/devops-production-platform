@@ -21,42 +21,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Login to Azure (CRITICAL: must be first Azure step)
+      # 2. Azure login
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 3. Set image tag ONCE (prevents mismatches)
-      - name: Define image tag
+      # 3. Create stable image tag
+      - name: Set IMAGE_TAG
         run: echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
-      # 4. Build Docker image
+      # 4. Login to ACR
+      - name: Login to ACR
+        run: az acr login --name $ACR_NAME
+
+      # 5. Build Docker image
       - name: Build Docker image
         run: |
           docker build \
             -t $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG \
             ./apps/backend
 
-      # 5. Trivy scan (LOCAL IMAGE - most stable approach)
+      # 6. Trivy scan (security gate)
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
-
-      # 6. Login to ACR (explicit = avoids silent failures)
-      - name: Login to ACR
-        run: az acr login --name $ACR_NAME
 
       # 7. Push image to ACR
       - name: Push image to ACR
         run: |
           docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
 
-      # 8. Get AKS credentials (always refresh)
+      # 8. Get AKS credentials
       - name: Get AKS credentials
         run: |
           az aks get-credentials \
@@ -69,3 +69,8 @@ jobs:
         run: |
           kubectl set image deployment/$IMAGE_NAME \
             $IMAGE_NAME=$ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
+
+      # 10. Verify rollout
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/$IMAGE_NAME
