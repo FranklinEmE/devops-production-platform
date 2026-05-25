@@ -28,6 +28,15 @@ jobs:
       - name: Build Docker image
         run: docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} ./apps/backend
 
+      # 🛡️ TRIVY SCAN (ADDED HERE)
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
       - name: Push image to ACR
         run: docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
 
