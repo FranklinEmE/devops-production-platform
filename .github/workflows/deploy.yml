@@ -1,4 +1,4 @@
-name: Deploy to AKS
+name: CI-CD Deploy to AKS
 
 on:
   push:
@@ -9,55 +9,63 @@ env:
   ACR_NAME: devopsacr1234567
   IMAGE_NAME: backend
   RESOURCE_GROUP: devops-rg
-  AKS_CLUSTER: devops-aks
+  AKS_NAME: devops-aks
 
 jobs:
   build-scan-push-deploy:
     runs-on: ubuntu-latest
 
     steps:
+
       # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Login to Azure
-      - name: Login to Azure
+      # 2. Login to Azure (CRITICAL: must be first Azure step)
+      - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 3. Login to ACR
-      - name: Login to ACR
-        run: az acr login --name $ACR_NAME
+      # 3. Set image tag ONCE (prevents mismatches)
+      - name: Define image tag
+        run: echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
       # 4. Build Docker image
       - name: Build Docker image
         run: |
-          docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} ./apps/backend
+          docker build \
+            -t $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG \
+            ./apps/backend
 
-      # 5. Trivy Security Scan (BEFORE PUSH)
+      # 5. Trivy scan (LOCAL IMAGE - most stable approach)
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ env.IMAGE_TAG }}
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
 
-      # 6. Push image to ACR
+      # 6. Login to ACR (explicit = avoids silent failures)
+      - name: Login to ACR
+        run: az acr login --name $ACR_NAME
+
+      # 7. Push image to ACR
       - name: Push image to ACR
         run: |
-          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
 
-      # 7. Get AKS credentials
-      - name: Set AKS context
+      # 8. Get AKS credentials (always refresh)
+      - name: Get AKS credentials
         run: |
           az aks get-credentials \
             --resource-group $RESOURCE_GROUP \
-            --name $AKS_CLUSTER
+            --name $AKS_NAME \
+            --overwrite-existing
 
-      # 8. Deploy to AKS
+      # 9. Deploy to AKS
       - name: Deploy to AKS
         run: |
-          kubectl set image deployment/backend-deployment \
-            backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+          kubectl set image deployment/$IMAGE_NAME \
+            $IMAGE_NAME=$ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
