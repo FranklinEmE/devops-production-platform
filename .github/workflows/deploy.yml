@@ -8,40 +8,56 @@ on:
 env:
   ACR_NAME: devopsacr1234567
   IMAGE_NAME: backend
+  RESOURCE_GROUP: devops-rg
+  AKS_CLUSTER: devops-aks
 
 jobs:
-  build-and-deploy:
+  build-scan-push-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2. Login to Azure
       - name: Login to Azure
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # 3. Login to ACR
       - name: Login to ACR
         run: az acr login --name $ACR_NAME
 
+      # 4. Build Docker image
       - name: Build Docker image
-        run: docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} ./apps/backend
+        run: |
+          docker build -t $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} ./apps/backend
 
-      # 🛡️ TRIVY SCAN (ADDED HERE)
+      # 5. Trivy Security Scan (BEFORE PUSH)
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          image-ref: $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
 
+      # 6. Push image to ACR
       - name: Push image to ACR
-        run: docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+        run: |
+          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
 
+      # 7. Get AKS credentials
       - name: Set AKS context
-        run: az aks get-credentials --resource-group devops-rg --name devops-aks
+        run: |
+          az aks get-credentials \
+            --resource-group $RESOURCE_GROUP \
+            --name $AKS_CLUSTER
 
+      # 8. Deploy to AKS
       - name: Deploy to AKS
-        run: kubectl set image deployment/backend-deployment backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+        run: |
+          kubectl set image deployment/backend-deployment \
+            backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
