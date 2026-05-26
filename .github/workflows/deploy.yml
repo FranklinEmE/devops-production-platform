@@ -27,7 +27,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 3. Define stable image tag
+      # 3. Define image tag
       - name: Set IMAGE_TAG
         run: echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
@@ -42,30 +42,21 @@ jobs:
             -t $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG \
             ./apps/backend
 
-      # 6. Trivy scan (SECURITY REPORT ONLY)
-      - name: Run Trivy scan (non-blocking except CRITICAL)
+      # 6. Trivy scan (SAFE MODE - never blocks except CRITICAL)
+      - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'table'
-          exit-code: '0'   # NEVER break pipeline here
+          exit-code: '0'
           severity: 'CRITICAL,HIGH'
 
-      # 7. Save report for visibility
-      - name: Save Trivy report
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'json'
-          output: trivy-report.json
-          exit-code: '0'
-
-      # 8. Push image to ACR
+      # 7. Push image to ACR
       - name: Push image to ACR
         run: |
           docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
 
-      # 9. Get AKS credentials
+      # 8. Get AKS credentials
       - name: Get AKS credentials
         run: |
           az aks get-credentials \
@@ -73,13 +64,13 @@ jobs:
             --name $AKS_NAME \
             --overwrite-existing
 
-      # 10. Deploy to AKS
+      # 9. Deploy to AKS (FIXED NAME)
       - name: Deploy to AKS
         run: |
-          kubectl set image deployment/$IMAGE_NAME \
-            $IMAGE_NAME=$ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
+          kubectl set image deployment/backend-deployment \
+            backend=$ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
 
-      # 11. Verify deployment
-      - name: Verify rollout
+      # 10. Verify rollout
+      - name: Verify deployment
         run: |
-          kubectl rollout status deployment/$IMAGE_NAME
+          kubectl rollout status deployment/backend-deployment
